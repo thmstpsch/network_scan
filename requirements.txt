@@ -1,0 +1,4 @@
+# No third-party Python packages are required.
+# System dependencies:
+# - nmap (required, available on PATH)
+# - arp-scan (optional, Linux only)

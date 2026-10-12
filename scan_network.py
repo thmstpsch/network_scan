@@ -57,7 +57,8 @@ def windows_interfaces():
         if line and not raw_line.startswith((" ", "\t")) and line.endswith(":"):
             if current:
                 interfaces.append(current)
-            current = {"name": line[:-1], "ip": "", "cidr": "", "subnet": ""}
+            adapter_name = re.sub(r"^.*\badapter\s+", "", line[:-1], flags=re.IGNORECASE)
+            current = {"name": adapter_name, "ip": "", "cidr": "", "subnet": ""}
         if current and ("IPv4 Address" in line or "IPv4-Adresse" in line):
             match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})", line)
             if match:
@@ -97,6 +98,13 @@ def run_scan(command, output_file, mode="w"):
 def with_privilege(command):
     if os.name != "nt" and os.geteuid() != 0 and shutil.which("sudo"):
         return ["sudo", *command]
+    return command
+
+
+def nmap_scan_command(target, interface):
+    command = ["nmap", "-sn", target]
+    if os.name != "nt":
+        command.extend(["-e", interface])
     return command
 
 
@@ -147,8 +155,8 @@ def main():
     print(f"  1) My subnet only ({subnet})")
     print("  2) My subnet AND other subnets on the same physical network")
     scan_other = input("Select scan scope [1/2] (default 1): ").strip() == "2"
-    output_file = Path(f"network_scan_{selected['name']}.txt")
-    command = with_privilege(["nmap", "-sn", subnet, "-e", selected["name"]])
+    output_file = Path(f"network_scan_{selected['name']}.log")
+    command = with_privilege(nmap_scan_command(subnet, selected["name"]))
     print(f"\nScanning network {subnet} on interface {selected['name']}...")
     if run_scan(command, output_file):
         return 1
@@ -168,14 +176,14 @@ def main():
     if not targets:
         print("No other subnets to actively scan.")
         return 0
-    other_output = Path(f"network_scan_{selected['name']}_other_subnets.txt")
+    other_output = Path(f"network_scan_{selected['name']}_other_subnets.log")
     scanner = "arp-scan" if shutil.which("arp-scan") and os.name != "nt" else "nmap"
     with other_output.open("w", encoding="utf-8") as output:
         for target in targets:
             print(f"\n>>> Scanning {target} on {selected['name']}")
             output.write(f"\n>>> Scanning {target} on {selected['name']}\n")
             command = ([scanner, "--interface=" + selected["name"], target]
-                       if scanner == "arp-scan" else ["nmap", "-sn", target, "-e", selected["name"]])
+                       if scanner == "arp-scan" else nmap_scan_command(target, selected["name"]))
             if run_scan(with_privilege(command), other_output, mode="a"):
                 return 1
     print(f"\nOther-subnet scan complete. Results saved to {other_output}.")
